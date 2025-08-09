@@ -136,19 +136,19 @@
 //     console.log("server is listining to port 8080");
 // });
 
-if (process.env.NODE_ENV != "production") {
-    require('dotenv').config();
+// Load environment variables in development
+if (process.env.NODE_ENV !== "production") {
+    require("dotenv").config();
 }
 
 const express = require("express");
-const app = express();
 const mongoose = require("mongoose");
-const path = require("path")
+const path = require("path");
 const methodOverride = require("method-override");
 const ejsMate = require("ejs-mate");
 const ExpressError = require("./utils/ExpressError.js");
 const session = require("express-session");
-const MongoStore = require('connect-mongo');
+const MongoStore = require("connect-mongo");
 const flash = require("connect-flash");
 const passport = require("passport");
 const LocalStrategy = require("passport-local");
@@ -158,45 +158,35 @@ const listingRouter = require("./routes/listing.js");
 const reviewRouter = require("./routes/review.js");
 const userRouter = require("./routes/user.js");
 
-// const MONGO_URL = "mongodb://127.0.0.1:27017/wanderlust";
+// ====== Database Connection ======
 const dbUrl = process.env.ATLASDB_URL;
-
-main()
-    .then(() => {
-        console.log("Connected To DB");
-    })
-    .catch((err) => {
-        console.log(err);
-    });
 
 async function main() {
     await mongoose.connect(dbUrl);
 }
+main()
+    .then(() => console.log("✅ Connected to MongoDB"))
+    .catch(err => console.error("❌ DB Connection Error:", err));
 
+// ====== Express App Setup ======
+const app = express();
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
+app.engine("ejs", ejsMate);
+
 app.use(express.urlencoded({ extended: true }));
 app.use(methodOverride("_method"));
-app.engine('ejs', ejsMate);
-app.use(express.static(path.join(__dirname, "/public")));
+app.use(express.static(path.join(__dirname, "public")));
 
-// 🔴 OLD PROBLEM: `err` was not passed to the callback here, so it could throw an undefined error
+// ====== Session Store ======
 const store = MongoStore.create({
     mongoUrl: dbUrl,
-    crypto: {
-        secret: process.env.SECRET,
-    },
+    crypto: { secret: process.env.SECRET },
     touchAfter: 24 * 3600,
 });
 
-// ❌ OLD CODE
-// store.on("error", () => {
-//     console.log("Error in MONGO SESSION STORE", err);
-// });
-
-// ✅ NEW CODE
-store.on("error", (err) => {
-    console.log("Error in MONGO SESSION STORE", err);
+store.on("error", err => {
+    console.log("❌ Error in MONGO SESSION STORE", err);
 });
 
 const sessionOptions = {
@@ -211,27 +201,17 @@ const sessionOptions = {
     },
 };
 
-// 🔴 OLD PROBLEM: Root route ("/") was commented out, causing "Cannot GET /" on Render
-// ❌ OLD CODE
-// app.get("/", (req, res) =>{
-//    res.send("Hi, I Am Root");
-// });
-
-// ✅ NEW CODE — Added a homepage route
-app.get("/", (req, res) => {
-    res.redirect("/listings");
-})
-
 app.use(session(sessionOptions));
 app.use(flash());
 
+// ====== Passport Auth ======
 app.use(passport.initialize());
 app.use(passport.session());
 passport.use(new LocalStrategy(User.authenticate()));
-
 passport.serializeUser(User.serializeUser());
 passport.deserializeUser(User.deserializeUser());
 
+// ====== Middleware for Flash + Current User ======
 app.use((req, res, next) => {
     res.locals.success = req.flash("success");
     res.locals.error = req.flash("error");
@@ -239,33 +219,28 @@ app.use((req, res, next) => {
     next();
 });
 
+// ====== Routes ======
+app.get("/", (req, res) => {
+    res.redirect("/listings"); // Root goes to listings
+});
+
 app.use("/listings", listingRouter);
 app.use("/listings/:id/reviews", reviewRouter);
 app.use("/", userRouter);
 
-app.get("/", (req, res) => {
-  res.send("Wanderlust app is running 🚀");
-});
-
-// ✅ Added 404 handler
+// ====== 404 Handler ======
 app.all("*", (req, res, next) => {
     next(new ExpressError(404, "Page Not Found"));
 });
 
-// ✅ Added global error handler
+// ====== Global Error Handler ======
 app.use((err, req, res, next) => {
     const { statusCode = 500, message = "Something went wrong" } = err;
     res.status(statusCode).send(message);
 });
 
-// 🔴 OLD PROBLEM: Port was hardcoded to 8080, not using Render’s dynamic port
-// ❌ OLD CODE
-// app.listen(8080, () => {
-//     console.log("server is listening to port 8080");
-// });
-
-// ✅ NEW CODE — uses dynamic port for Render
+// ====== Start Server ======
 const port = process.env.PORT || 8080;
 app.listen(port, () => {
-    console.log(`server is listening on port ${port}`);
+    console.log(`🚀 Server running on port ${port}`);
 });
